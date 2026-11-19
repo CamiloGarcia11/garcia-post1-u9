@@ -2,12 +2,11 @@ package com.clinica.recordatorios.service;
 
 import com.clinica.recordatorios.channel.ReminderChannel;
 import com.clinica.recordatorios.channel.ReminderChannelFactory;
-import com.clinica.recordatorios.channel.SmsReminderChannel;
-import com.clinica.recordatorios.channel.gateway.TwilioNotificadorSmsGateway;
 import com.clinica.recordatorios.domain.Cita;
 import com.clinica.recordatorios.repository.CitaRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,13 +21,16 @@ public class CitaReminderServiceImpl implements CitaReminderService {
 
     private final CitaRepository citaRepository;
     private final ReminderChannelFactory channelFactory;
+    private final ReminderChannel canalUrgente;
     private final Clock clock;
 
     public CitaReminderServiceImpl(CitaRepository citaRepository,
                                   ReminderChannelFactory channelFactory,
+                                  @Qualifier("canalUrgente") ReminderChannel canalUrgente,
                                   Clock clock) {
         this.citaRepository = citaRepository;
         this.channelFactory = channelFactory;
+        this.canalUrgente = canalUrgente;
         this.clock = clock;
     }
 
@@ -58,8 +60,7 @@ public class CitaReminderServiceImpl implements CitaReminderService {
         Cita cita = citaRepository.findById(citaId)
                 .orElseThrow(() -> new CitaNoEncontradaException("No se encontro la cita con ID: " + citaId));
 
-        // VIOLACION DE DIP: Creación directa con new acoplando a clases concretas
-        ReminderChannel canalUrgente = new SmsReminderChannel(new TwilioNotificadorSmsGateway());
+        // DIP Aplicado: Se utiliza la abstracción inyectada por constructor sin acoplamiento a clases concretas
         String mensajeUrgente = String.format("URGENTE: Estimado(a) %s, confirme su cita medica inmediata programada para %s.",
                 cita.getPacienteNombre(), cita.getFechaHoraCita());
 
