@@ -19,18 +19,19 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
- * Suite de pruebas unitarias para CitaReminderServiceImpl (Parte 1).
- * Aplica Test Doubles justificados:
- * - Mocks para CitaRepository, ReminderChannelFactory y ReminderChannel (aislar I/O y verificar llamadas).
- * - Fake para Clock (Clock.fixed provee tiempo determinista sin acoplarse al reloj del sistema).
+ * Suite de pruebas unitarias para CitaReminderServiceImpl.
+ * Parte 1: Pruebas de recordatorios pendientes con Strategy, Factory Method y Clock fijo como Fake.
+ * Parte 2: Pruebas de recordatorios urgentes habilitadas tras el refactor DIP.
  */
 @ExtendWith(MockitoExtension.class)
 class CitaReminderServiceImplTest {
@@ -47,6 +48,9 @@ class CitaReminderServiceImplTest {
     @Mock
     private ReminderChannel smsChannel;
 
+    @Mock
+    private ReminderChannel canalUrgente;
+
     private Clock fixedClock;
     private CitaReminderServiceImpl citaReminderService;
 
@@ -57,8 +61,12 @@ class CitaReminderServiceImplTest {
     void setUp() {
         // Test Double: Fake para Clock (determinismo temporal)
         fixedClock = Clock.fixed(fixedInstant, zoneId);
-        citaReminderService = new CitaReminderServiceImpl(citaRepository, channelFactory, fixedClock);
+        citaReminderService = new CitaReminderServiceImpl(citaRepository, channelFactory, canalUrgente, fixedClock);
     }
+
+    // =========================================================================
+    // PARTE 1: Pruebas de enviarRecordatoriosPendientes
+    // =========================================================================
 
     @Test
     @DisplayName("enviarRecordatoriosPendientes: cita en ventana obtiene el canal de la factory y envía el mensaje")
@@ -118,6 +126,56 @@ class CitaReminderServiceImplTest {
         verify(channelFactory, never()).obtenerCanal(any());
         verify(emailChannel, never()).enviar(any(), any());
         verify(smsChannel, never()).enviar(any(), any());
+        verify(citaRepository, never()).save(any());
+    }
+
+    // =========================================================================
+    // PARTE 2: Pruebas de enviarRecordatorioUrgente habilitadas por refactor DIP
+    // =========================================================================
+
+    @Test
+    @DisplayName("enviarRecordatorioUrgente: cita existente envía mensaje urgente vía canalUrgente inyectado y persiste")
+    void enviarRecordatorioUrgente_citaExistente_usaCanalUrgenteInyectado() {
+        // Arrange
+        Cita cita = new Cita(5L, "Ana Torres", "+573001234567",
+                LocalDateTime.now(fixedClock).plusHours(2), CanalNotificacion.SMS, false);
+        when(citaRepository.findById(5L)).thenReturn(Optional.of(cita));
+
+        // Act
+        citaReminderService.enviarRecordatorioUrgente(5L);
+
+        // Assert
+        verify(canalUrgente, times(1)).enviar(eq(cita), contains("URGENTE"));
+        assertThat(cita.isRecordatorioEnviado()).isTrue();
+        verify(citaRepository, times(1)).save(cita);
+    }
+
+    @Test
+    @DisplayName("enviarRecordatorioUrgente: si el canal/gateway falla, la excepción escala y la cita NO se guarda como enviada")
+    void enviarRecordatorioUrgente_gatewayFalla_noMarcaComoEnviado() {
+        // Arrange
+        Cita cita = new Cita(5L, "Ana Torres", "+573001234567",
+                LocalDateTime.now(fixedClock).plusHours(2), CanalNotificacion.SMS, false);
+        when(citaRepository.findById(5L)).thenReturn(Optional.of(cita));
+        doThrow(new RuntimeException("Falla en gateway SMS Twilio")).when(canalUrgente).enviar(any(), any());
+
+        // Act & Assert
+        assertThrows(RuntimeException.class, () -> citaReminderService.enviarRecordatorioUrgente(5L));
+
+        assertThat(cita.isRecordatorioEnviado()).isFalse();
+        verify(citaRepository, never()).save(cita);
+    }
+
+    @Test
+    @DisplayName("enviarRecordatorioUrgente: si la cita no existe, lanza CitaNoEncontradaException y no envía nada")
+    void enviarRecordatorioUrgente_citaInexistente_lanzaCitaNoEncontradaException() {
+        // Arrange
+        when(citaRepository.findById(99L)).thenReturn(Optional.empty());
+
+        // Act & Assert
+        assertThrows(CitaNoEncontradaException.class, () -> citaReminderService.enviarRecordatorioUrgente(99L));
+
+        verify(canalUrgente, never()).enviar(any(), any());
         verify(citaRepository, never()).save(any());
     }
 }
