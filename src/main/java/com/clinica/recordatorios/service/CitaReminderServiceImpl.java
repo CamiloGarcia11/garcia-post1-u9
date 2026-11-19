@@ -2,6 +2,8 @@ package com.clinica.recordatorios.service;
 
 import com.clinica.recordatorios.channel.ReminderChannel;
 import com.clinica.recordatorios.channel.ReminderChannelFactory;
+import com.clinica.recordatorios.channel.SmsReminderChannel;
+import com.clinica.recordatorios.channel.gateway.TwilioNotificadorSmsGateway;
 import com.clinica.recordatorios.domain.Cita;
 import com.clinica.recordatorios.repository.CitaRepository;
 import org.slf4j.Logger;
@@ -48,5 +50,22 @@ public class CitaReminderServiceImpl implements CitaReminderService {
             citaRepository.save(cita);
             log.info("Recordatorio enviado y actualizado para la cita #{}", cita.getId());
         }
+    }
+
+    @Override
+    @Transactional
+    public void enviarRecordatorioUrgente(Long citaId) {
+        Cita cita = citaRepository.findById(citaId)
+                .orElseThrow(() -> new CitaNoEncontradaException("No se encontro la cita con ID: " + citaId));
+
+        // VIOLACION DE DIP: Creación directa con new acoplando a clases concretas
+        ReminderChannel canalUrgente = new SmsReminderChannel(new TwilioNotificadorSmsGateway());
+        String mensajeUrgente = String.format("URGENTE: Estimado(a) %s, confirme su cita medica inmediata programada para %s.",
+                cita.getPacienteNombre(), cita.getFechaHoraCita());
+
+        canalUrgente.enviar(cita, mensajeUrgente);
+        cita.setRecordatorioEnviado(true);
+        citaRepository.save(cita);
+        log.info("Recordatorio urgente enviado para cita #{}", citaId);
     }
 }

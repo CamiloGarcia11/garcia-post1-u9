@@ -5,4 +5,5 @@ package com.clinica.recordatorios.service;
  */
 public interface CitaReminderService {
     void enviarRecordatoriosPendientes();
+    void enviarRecordatorioUrgente(Long citaId);
 }
