@@ -58,6 +58,14 @@ public class Cita {
         this.pacienteContacto = pacienteContacto;
     }
 
+    public String getPacienteEmail() {
+        return pacienteContacto;
+    }
+
+    public String getPacienteTelefono() {
+        return pacienteContacto;
+    }
+
     public LocalDateTime getFechaHoraCita() {
         return fechaHoraCita;
     }
